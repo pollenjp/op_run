@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -e | --env-file)
+      ENV_FILE="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "Error: Unknown option $1" >&2
+      exit 1
+      ;;
+    *)
+      # command part starts here
+      break
+      ;;
+  esac
+done
+
+if [[ $# -eq 0 ]]; then
+  echo "Error: No command specified" >&2
+  exit 1
+fi
+
+if [[ -z "${ENV_FILE:-}" ]]; then
+  echo "Error: No env file specified" >&2
+  exit 1
+fi
+
+op_run_cmd=()
+if uname -r | grep microsoft | grep WSL &>/dev/null; then
+  # if WSL
+  # ex) 6.6.87.2-microsoft-standard-WSL2
+  op_run_cmd+=(oprun -v -q)
+  if ! command -v oprun >/dev/null; then
+    echo "Install 'oprun' command from https://github.com/pollenjp/oprun.sh" >&2
+    exit 1
+  fi
+else # simple linux (not WSL)
+  op_run_cmd+=(op run)
+fi
+
+"${op_run_cmd[@]}" --env-file "${ENV_FILE:?}" -- "${@}"
