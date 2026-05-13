@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  upload-assets:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build platform tarballs
+        run: |
+          set -euo pipefail
+          tag="${{ needs.release-please.outputs.tag_name }}"
+          mkdir -p dist staging
+          cp op_run staging/op_run
+          chmod +x staging/op_run
+
+          # op_run is a portable bash script; ship identical archives per
+          # platform so mise's GitHub backend autodetection picks them up.
+          for target in linux-x64 linux-arm64 linux-x86 macos-x64 macos-arm64; do
+            archive="dist/op_run-${tag}-${target}.tar.gz"
+            tar -czf "${archive}" -C staging op_run
+            (cd dist && sha256sum "$(basename "${archive}")") >> dist/SHA256SUMS
+          done
+
+          ls -la dist
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.release-please.outputs.tag_name }}"
+          gh release upload "${tag}" dist/op_run-*.tar.gz dist/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
